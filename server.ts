@@ -10,7 +10,7 @@ dotenv.config();
 
 const execAsync = promisify(exec);
 const app = express();
-const PORT = 3000;
+const PORT = process.env.DEFAULT_APP_PORT ? 3000 : (process.env.PORT ? Number(process.env.PORT) : 3000);
 
 app.use(express.json());
 
