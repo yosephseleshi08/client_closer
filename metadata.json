@@ -1,0 +1,6 @@
+{
+  "name": "Outreach Engine Pro",
+  "description": "Autonomous Revenue Engine & Executive Revenue Telemetry for high-ticket hospitality outreach, AI copilot follow-ups, and pipeline conversion tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
