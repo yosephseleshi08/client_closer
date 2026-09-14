@@ -13,7 +13,8 @@ import {
   EyeOff,
   Sparkles,
   ShieldCheck,
-  Smartphone
+  Smartphone,
+  Terminal
 } from 'lucide-react';
 import { VaultMode } from '../../types';
 
@@ -27,6 +28,7 @@ interface SettingsModalProps {
   onLockVault: () => void;
   autoLockMinutes: number;
   onUpdateAutoLock: (minutes: number) => void;
+  onOpenLogs?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -38,7 +40,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onToggleVaultMode,
   onLockVault,
   autoLockMinutes,
-  onUpdateAutoLock
+  onUpdateAutoLock,
+  onOpenLogs
 }) => {
   const [activeTab, setActiveTab] = useState<'tuning' | 'security'>('security');
   const [rateLimitSpacing, setRateLimitSpacing] = useState('250ms');
@@ -309,6 +312,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </form>
               </div>
+
+              {/* Operational Logs & Diagnostics Launch Banner */}
+              {onOpenLogs && (
+                <div className="p-3.5 rounded-xl bg-[#141b2b] border border-[#2b3854] flex items-center justify-between">
+                  <div>
+                    <span className="font-display font-bold text-[13px] text-[#dde2f3] flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-[#4cd7f6]" />
+                      Live Operational Logs & Render Diagnostics
+                    </span>
+                    <span className="text-[11px] text-[#8e98b0]">
+                      Inspect real-time auth attempts, AI generation, and Render deployment guides
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenLogs();
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-[#20293d] hover:bg-[#2c3854] text-[#4cd7f6] font-semibold text-xs border border-[#3b4b70] transition-colors"
+                  >
+                    Open Console
+                  </button>
+                </div>
+              )}
 
             </div>
           )}

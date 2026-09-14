@@ -24,6 +24,7 @@ interface HeaderProps {
   onOpenNotifications: () => void;
   onOpenSettings: () => void;
   onOpenGitHub: () => void;
+  onOpenLogs?: () => void;
   aiEngine: 'ollama' | 'gemini';
   onToggleAiEngine: () => void;
   unreadCount: number;
@@ -39,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   onOpenSettings,
   onOpenGitHub,
+  onOpenLogs,
   aiEngine,
   onToggleAiEngine,
   unreadCount,
@@ -142,6 +144,18 @@ export const Header: React.FC<HeaderProps> = ({
               <GitBranch className="w-4 h-4 text-[#c0c1ff]" />
               <span className="hidden lg:inline">GitHub</span>
             </button>
+
+            {/* Operational Logs & Telemetry Button */}
+            {onOpenLogs && (
+              <button
+                onClick={onOpenLogs}
+                title="View Live Operational Logs & Render Deployment Telemetry"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#141d2f] hover:bg-[#1d2942] text-[#4cd7f6] border border-[#4cd7f6]/30 text-[12px] font-telemetry font-medium transition-all shadow-sm group"
+              >
+                <Terminal className="w-4 h-4 text-[#4cd7f6] group-hover:scale-110 transition-transform" />
+                <span className="hidden sm:inline">Live Logs</span>
+              </button>
+            )}
 
             {/* Notifications */}
             <button

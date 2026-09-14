@@ -3,7 +3,7 @@ services:
     name: outreach-engine-pro
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: chmod +x ./render-build.sh && ./render-build.sh
     startCommand: npm start
     envVars:
       - key: NODE_ENV

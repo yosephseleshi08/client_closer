@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, X, Zap, Cpu, ArrowRight, LayoutDashboard, Bot, Kanban, Users2, BarChart3, GitBranch, Lock, Sparkles } from 'lucide-react';
+import { Search, X, Zap, Cpu, ArrowRight, LayoutDashboard, Bot, Kanban, Users2, BarChart3, GitBranch, Lock, Sparkles, Terminal } from 'lucide-react';
 import { NavTab, UrgentTarget } from '../../types';
 
 interface CommandPaletteProps {
@@ -11,6 +11,7 @@ interface CommandPaletteProps {
   onBatchDispatch: () => void;
   onToggleAi: () => void;
   onOpenGitHub: () => void;
+  onOpenLogs?: () => void;
   onLockVault?: () => void;
   onToggleVaultMode?: () => void;
 }
@@ -24,6 +25,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onBatchDispatch,
   onToggleAi,
   onOpenGitHub,
+  onOpenLogs,
   onLockVault,
   onToggleVaultMode
 }) => {
@@ -121,6 +123,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             </div>
             <ArrowRight className="w-3.5 h-3.5 text-[#908fa0] group-hover:text-white" />
           </button>
+
+          {onOpenLogs && (
+            <button
+              onClick={() => {
+                onOpenLogs();
+                onClose();
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#141e30] text-[#4cd7f6] flex items-center justify-between group transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <Terminal className="w-4 h-4 text-[#4cd7f6]" />
+                <span>Open Live Operational Logs & Diagnostics</span>
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-[#4cd7f6] group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          )}
 
           {onToggleVaultMode && (
             <button

@@ -36,6 +36,7 @@ import { GitHubModal } from './components/modals/GitHubModal';
 import { CommandPalette } from './components/modals/CommandPalette';
 import { NotificationsDrawer } from './components/modals/NotificationsDrawer';
 import { SettingsModal } from './components/modals/SettingsModal';
+import { LogsTelemetryModal } from './components/modals/LogsTelemetryModal';
 
 import { CopilotView } from './components/views/CopilotView';
 import { CRMView } from './components/views/CRMView';
@@ -122,6 +123,7 @@ export default function App() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
 
   const urgentCount = targets.filter((t) => t.status === 'pending').length;
   const unreadSignalsCount = signals.filter((s) => s.unread).length;
@@ -243,6 +245,10 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'l' || e.key === 'L')) {
         e.preventDefault();
         handleLockVault();
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'j' || e.key === 'J')) {
+        e.preventDefault();
+        setIsLogsModalOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -382,6 +388,7 @@ export default function App() {
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenGitHub={() => setIsGitHubModalOpen(true)}
+        onOpenLogs={() => setIsLogsModalOpen(true)}
         aiEngine={aiEngine}
         onToggleAiEngine={() => setAiEngine((prev) => (prev === 'gemini' ? 'ollama' : 'gemini'))}
         unreadCount={unreadSignalsCount}
@@ -567,6 +574,7 @@ export default function App() {
         onBatchDispatch={handleTriggerBatchDispatch}
         onToggleAi={() => setAiEngine((prev) => (prev === 'gemini' ? 'ollama' : 'gemini'))}
         onOpenGitHub={() => setIsGitHubModalOpen(true)}
+        onOpenLogs={() => setIsLogsModalOpen(true)}
         onLockVault={handleLockVault}
         onToggleVaultMode={handleToggleVaultMode}
       />
@@ -591,6 +599,13 @@ export default function App() {
         onLockVault={handleLockVault}
         autoLockMinutes={autoLockMinutes}
         onUpdateAutoLock={handleUpdateAutoLock}
+        onOpenLogs={() => setIsLogsModalOpen(true)}
+      />
+
+      {/* 8. Operational Logs & Telemetry Terminal Modal */}
+      <LogsTelemetryModal
+        isOpen={isLogsModalOpen}
+        onClose={() => setIsLogsModalOpen(false)}
       />
 
     </div>

@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
@@ -18,6 +19,131 @@ app.use(express.json());
 let currentMasterPassword = process.env.ADMIN_PASSWORD || "closer2026";
 const validSessionTokens = new Set<string>();
 
+// Structured In-Memory Operational Logs Engine
+export interface SystemLogEntry {
+  id: string;
+  timestamp: string;
+  level: "info" | "success" | "warn" | "error";
+  category: "AUTH" | "AI_GEMINI" | "OUTREACH" | "BATCH" | "SERVER" | "DEPLOY";
+  message: string;
+  details?: Record<string, any>;
+}
+
+const MAX_LOGS = 300;
+const systemLogs: SystemLogEntry[] = [];
+
+export function logEvent(
+  level: "info" | "success" | "warn" | "error",
+  category: "AUTH" | "AI_GEMINI" | "OUTREACH" | "BATCH" | "SERVER" | "DEPLOY",
+  message: string,
+  details?: Record<string, any>
+): SystemLogEntry {
+  const entry: SystemLogEntry = {
+    id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    timestamp: new Date().toISOString(),
+    level,
+    category,
+    message,
+    details
+  };
+  systemLogs.unshift(entry);
+  if (systemLogs.length > MAX_LOGS) {
+    systemLogs.pop();
+  }
+  const colorMap = {
+    info: "\x1b[34m[INFO]\x1b[0m",
+    success: "\x1b[32m[SUCCESS]\x1b[0m",
+    warn: "\x1b[33m[WARN]\x1b[0m",
+    error: "\x1b[31m[ERROR]\x1b[0m"
+  };
+  console.log(`${colorMap[level]} [${category}] ${message}`, details ? JSON.stringify(details) : "");
+  return entry;
+}
+
+// Initial Boot Logs
+logEvent("info", "SERVER", `Outreach Engine Pro runtime booting up`, {
+  nodeVersion: process.version,
+  environment: process.env.NODE_ENV || "development",
+  port: PORT,
+  platform: process.platform,
+  hasGeminiKey: !!process.env.GEMINI_API_KEY,
+  isRender: !!process.env.RENDER || !!process.env.RENDER_SERVICE_ID
+});
+
+// Logs API Endpoints
+app.get("/api/logs", (req, res) => {
+  const { category, level, limit = 100 } = req.query;
+  let filtered = [...systemLogs];
+  if (category && typeof category === "string" && category !== "ALL") {
+    filtered = filtered.filter((l) => l.category === category);
+  }
+  if (level && typeof level === "string" && level !== "ALL") {
+    filtered = filtered.filter((l) => l.level === level);
+  }
+  res.json({
+    success: true,
+    totalLogs: systemLogs.length,
+    returnedCount: Math.min(filtered.length, Number(limit)),
+    uptimeSec: Math.floor(process.uptime()),
+    memoryUsageMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    hasGeminiKey: !!process.env.GEMINI_API_KEY,
+    nodeVersion: process.version,
+    isRender: !!process.env.RENDER,
+    logs: filtered.slice(0, Number(limit))
+  });
+});
+
+app.post("/api/logs/clear", (_req, res) => {
+  systemLogs.length = 0;
+  logEvent("info", "SERVER", "Operational logs buffer cleared by operator");
+  res.json({ success: true, message: "Logs cleared successfully" });
+});
+
+app.post("/api/logs/add", (req, res) => {
+  const { level = "info", category = "SERVER", message = "", details } = req.body;
+  if (!message) {
+    return res.status(400).json({ success: false, error: "Message is required" });
+  }
+  const entry = logEvent(level, category, message, details);
+  res.json({ success: true, entry });
+});
+
+app.post("/api/logs/diagnostics", async (_req, res) => {
+  const distExists = fs.existsSync(path.join(process.cwd(), "dist"));
+  const distServerExists = fs.existsSync(path.join(process.cwd(), "dist", "server.cjs"));
+  const distIndexExists = fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
+  const geminiAvailable = !!process.env.GEMINI_API_KEY;
+
+  logEvent("info", "DEPLOY", "Running system & deployment diagnostic probe...", {
+    distDirectory: distExists ? "Present" : "Missing",
+    serverBundle: distServerExists ? "Compiled (dist/server.cjs)" : "Missing",
+    frontendBundle: distIndexExists ? "Compiled (dist/index.html)" : "Missing",
+    geminiKeyConfigured: geminiAvailable,
+    nodeVersion: process.version,
+    platform: process.platform,
+    memoryMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+  });
+
+  if (!distServerExists && process.env.NODE_ENV === "production") {
+    logEvent("error", "DEPLOY", "CRITICAL: dist/server.cjs missing in production environment. Render build command must include 'npm run build'.");
+  } else {
+    logEvent("success", "SERVER", "Diagnostic test passed: Server is operational and healthy.");
+  }
+
+  res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
+    diagnostics: {
+      distExists,
+      distServerExists,
+      distIndexExists,
+      geminiAvailable,
+      uptimeSeconds: Math.floor(process.uptime()),
+      memoryHeapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+    }
+  });
+});
+
 // Auth Endpoints for CRM Vault Protection
 app.get("/api/auth/status", (_req, res) => {
   res.json({
@@ -30,12 +156,17 @@ app.get("/api/auth/status", (_req, res) => {
 app.post("/api/auth/verify", (req, res) => {
   const { password } = req.body;
   if (!password) {
+    logEvent("warn", "AUTH", "Vault unlock attempt rejected: empty password submitted");
     return res.status(400).json({ success: false, error: "Password is required" });
   }
 
   if (password === currentMasterPassword) {
     const token = `vault_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
     validSessionTokens.add(token);
+    logEvent("success", "AUTH", "Master vault successfully unlocked", {
+      isDefaultPassword: currentMasterPassword === "closer2026",
+      tokenPrefix: token.substring(0, 10) + "..."
+    });
     return res.json({
       success: true,
       token,
@@ -44,6 +175,7 @@ app.post("/api/auth/verify", (req, res) => {
     });
   }
 
+  logEvent("warn", "AUTH", "Unauthorized unlock attempt: incorrect master password entered");
   return res.status(401).json({
     success: false,
     error: "Invalid master password. Enter correct credentials to unlock private vault."
@@ -57,6 +189,7 @@ app.post("/api/auth/update-password", (req, res) => {
   }
 
   if (currentPassword !== currentMasterPassword) {
+    logEvent("warn", "AUTH", "Password update rejected: current password verification failed");
     return res.status(401).json({ success: false, error: "Current password does not match" });
   }
 
@@ -67,6 +200,7 @@ app.post("/api/auth/update-password", (req, res) => {
   currentMasterPassword = newPassword;
   const newToken = `vault_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
   validSessionTokens.add(newToken);
+  logEvent("success", "AUTH", "Master vault password was successfully updated");
 
   return res.json({
     success: true,
@@ -138,6 +272,10 @@ Return ONLY the message text in double quotes.`;
 
       if (response && response.text) {
         const message = response.text.trim().replace(/^"|"$/g, "");
+        logEvent("success", "AI_GEMINI", `Generated VIP outreach message for ${restaurantName}`, {
+          platform,
+          length: message.length
+        });
         return res.json({
           success: true,
           message,
@@ -166,6 +304,8 @@ Return ONLY the message text in double quotes.`;
     const toneList = fallbacks[tone] || fallbacks.default;
     const chosen = toneList[Math.floor(Math.random() * toneList.length)];
 
+    logEvent("info", "OUTREACH", `Generated outreach copy via high-ticket hospitality matrix for ${restaurantName}`);
+
     res.json({
       success: true,
       message: chosen,
@@ -173,6 +313,7 @@ Return ONLY the message text in double quotes.`;
       latencyMs: 42
     });
   } catch (error: any) {
+    logEvent("error", "AI_GEMINI", `Outreach generation error: ${error.message || "Unknown error"}`);
     console.error("Outreach generation error:", error);
     res.json({
       success: true,
@@ -195,6 +336,11 @@ app.post("/api/batch-dispatch", async (req, res) => {
     { name: "L'Ami Jean NYC", handle: "@lamijeannyc", platform: "Instagram", status: "dispatched", latency: "44ms" },
     { name: "Bōken Izakaya", handle: "@boken_izakaya", platform: "Instagram", status: "dispatched", latency: "52ms" }
   ];
+
+  logEvent("success", "BATCH", `Batch dispatched ${count} autonomous hospitality outreach threads`, {
+    targetCount: count,
+    engine: "Ollama Autonomous Worker Pool"
+  });
 
   res.json({
     success: true,
@@ -257,8 +403,10 @@ app.post("/api/git-push", async (req, res) => {
     await execAsync(`git branch -M ${branch}`);
     const { stdout } = await execAsync(`git push -u origin ${branch}`);
 
+    logEvent("success", "DEPLOY", `Pushed repository update to GitHub: ${remoteUrl}`);
     res.json({ success: true, message: "Pushed successfully to GitHub!", output: stdout });
   } catch (err: any) {
+    logEvent("error", "DEPLOY", `Git push failed: ${err.message || "Unknown error"}`);
     console.error("Git push failed:", err);
     res.status(500).json({
       success: false,
@@ -276,15 +424,54 @@ async function startServer() {
       appType: "spa"
     });
     app.use(vite.middlewares);
+    logEvent("info", "SERVER", "Vite middleware mounted in development mode");
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    const indexPath = path.join(distPath, "index.html");
+    const distExists = fs.existsSync(distPath);
+
+    if (distExists) {
+      app.use(express.static(distPath));
+      logEvent("info", "SERVER", "Static production assets mounted from dist folder");
+    } else {
+      logEvent("warn", "DEPLOY", "Production dist/ directory not found. Ensure 'npm run build' completed.");
+    }
+
     app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(503).send(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>Production Build Warning - Outreach Engine Pro</title>
+              <style>
+                body { background: #0e131f; color: #dde2f3; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+                .box { max-width: 600px; background: #1a2030; border: 1px solid #333d59; border-radius: 12px; padding: 32px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+                h1 { color: #ffb4ab; margin-top: 0; }
+                code { background: #262f46; padding: 2px 6px; border-radius: 4px; font-family: monospace; color: #c0c1ff; }
+                p { line-height: 1.6; }
+              </style>
+            </head>
+            <body>
+              <div class="box">
+                <h1>Deployment Build Incomplete</h1>
+                <p>The production frontend assets (<code>dist/index.html</code>) are not yet compiled.</p>
+                <p><strong>Fix for Render:</strong></p>
+                <p>Ensure your Render service <em>Build Command</em> is set to:<br><code>npm install && npm run build</code> or <code>./render-build.sh</code></p>
+                <p>And your <em>Start Command</em> is set to:<br><code>npm start</code></p>
+              </div>
+            </body>
+          </html>
+        `);
+      }
     });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
+    logEvent("success", "SERVER", `Outreach Engine Pro server running on port ${PORT}`);
     console.log(`Outreach Engine Pro server running on http://0.0.0.0:${PORT}`);
   });
 }
