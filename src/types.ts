@@ -104,3 +104,18 @@ export type HospitalityFilter =
   | 'fine-dining'
   | 'nightclub-lounges'
   | 'multi-location';
+
+export type VaultMode = 'real' | 'demo';
+
+export interface AuthSession {
+  token: string;
+  authenticated: boolean;
+  expiresAt: number;
+  rememberMe: boolean;
+  isDefaultPassword?: boolean;
+}
+
+export interface SecuritySettings {
+  autoLockMinutes: number; // 0 for manual, or 15, 30, 60
+  lastActivity: number;
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, X, Zap, Cpu, ArrowRight, LayoutDashboard, Bot, Kanban, Users2, BarChart3, GitBranch } from 'lucide-react';
+import { Search, X, Zap, Cpu, ArrowRight, LayoutDashboard, Bot, Kanban, Users2, BarChart3, GitBranch, Lock, Sparkles } from 'lucide-react';
 import { NavTab, UrgentTarget } from '../../types';
 
 interface CommandPaletteProps {
@@ -11,6 +11,8 @@ interface CommandPaletteProps {
   onBatchDispatch: () => void;
   onToggleAi: () => void;
   onOpenGitHub: () => void;
+  onLockVault?: () => void;
+  onToggleVaultMode?: () => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -21,7 +23,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onSelectTarget,
   onBatchDispatch,
   onToggleAi,
-  onOpenGitHub
+  onOpenGitHub,
+  onLockVault,
+  onToggleVaultMode
 }) => {
   const [query, setQuery] = useState('');
 
@@ -117,6 +121,38 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             </div>
             <ArrowRight className="w-3.5 h-3.5 text-[#908fa0] group-hover:text-white" />
           </button>
+
+          {onToggleVaultMode && (
+            <button
+              onClick={() => {
+                onToggleVaultMode();
+                onClose();
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#242a36] text-[#dde2f3] flex items-center justify-between group transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="w-4 h-4 text-[#ffb4ab]" />
+                <span>Toggle Vault Mode (Demo Presentation vs Real Vault)</span>
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-[#908fa0] group-hover:text-white" />
+            </button>
+          )}
+
+          {onLockVault && (
+            <button
+              onClick={() => {
+                onClose();
+                onLockVault();
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#93000a]/30 text-[#ffdad6] flex items-center justify-between group transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-[#ffb4ab]" />
+                <span className="font-bold">Lock CRM Vault Immediately (⌘L)</span>
+              </div>
+              <span className="text-[10px] font-telemetry text-[#ffb4ab]">Secure</span>
+            </button>
+          )}
 
           {/* Navigation Views */}
           <div className="px-3 pt-3 pb-1 text-[10px] text-[#c7c4d7]/60 font-semibold uppercase tracking-wider">

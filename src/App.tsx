@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   INITIAL_URGENT_TARGETS, 
   INITIAL_INBOUND_SIGNALS, 
@@ -13,7 +13,9 @@ import {
   NavTab, 
   Timeframe, 
   HospitalityFilter,
-  LeadAcquisitionCandidate 
+  LeadAcquisitionCandidate,
+  VaultMode,
+  AuthSession
 } from './types';
 import { Header } from './components/Header';
 import { TacticalBar } from './components/TacticalBar';
@@ -25,6 +27,7 @@ import { UrgentFollowUpTable } from './components/UrgentFollowUpTable';
 import { Footer } from './components/Footer';
 
 // Modals & Views
+import { AuthLockScreen } from './components/modals/AuthLockScreen';
 import { MockupModal } from './components/modals/MockupModal';
 import { AIDraftModal } from './components/modals/AIDraftModal';
 import { ChatThreadModal } from './components/modals/ChatThreadModal';
@@ -40,12 +43,69 @@ import { LeadAcquisitionView } from './components/views/LeadAcquisitionView';
 import { AnalyticsView } from './components/views/AnalyticsView';
 
 export default function App() {
+  // Security & Vault State
+  const [isLocked, setIsLocked] = useState<boolean>(() => {
+    const savedSession = localStorage.getItem('outreach_vault_session') || sessionStorage.getItem('outreach_vault_session');
+    if (savedSession) {
+      try {
+        const parsed: AuthSession = JSON.parse(savedSession);
+        if (parsed.authenticated && parsed.expiresAt > Date.now()) {
+          return false;
+        }
+      } catch {
+        // Corrupted session
+      }
+    }
+    return true; // Password protected on startup!
+  });
+
+  const [vaultMode, setVaultMode] = useState<VaultMode>(() => {
+    const savedMode = localStorage.getItem('outreach_vault_mode') as VaultMode;
+    return savedMode === 'demo' ? 'demo' : 'real';
+  });
+
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
+  const [autoLockMinutes, setAutoLockMinutes] = useState<number>(() => {
+    const saved = localStorage.getItem('outreach_autolock_min');
+    return saved !== null ? Number(saved) : 30;
+  });
+
   const [currentTab, setCurrentTab] = useState<NavTab>('executive-dashboard');
   const [timeframe, setTimeframe] = useState<Timeframe>('Real-time');
   const [hospitalityFilter, setHospitalityFilter] = useState<HospitalityFilter>('fine-dining');
   
-  // Data State
-  const [targets, setTargets] = useState<UrgentTarget[]>(INITIAL_URGENT_TARGETS);
+  // Real Vault targets (stored securely in localStorage)
+  const [realTargets, setRealTargets] = useState<UrgentTarget[]>(() => {
+    const saved = localStorage.getItem('outreach_real_vault_targets');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+    return INITIAL_URGENT_TARGETS;
+  });
+
+  // Demo targets (isolated sample targets for presentations)
+  const [demoTargets, setDemoTargets] = useState<UrgentTarget[]>(() => {
+    return INITIAL_URGENT_TARGETS;
+  });
+
+  // Active targets based on current mode
+  const targets = vaultMode === 'real' ? realTargets : demoTargets;
+
+  const setTargets = (updater: UrgentTarget[] | ((prev: UrgentTarget[]) => UrgentTarget[])) => {
+    if (vaultMode === 'real') {
+      setRealTargets((prev) => {
+        const updated = typeof updater === 'function' ? updater(prev) : updater;
+        localStorage.setItem('outreach_real_vault_targets', JSON.stringify(updated));
+        return updated;
+      });
+    } else {
+      setDemoTargets(updater);
+    }
+  };
+
   const [signals, setSignals] = useState<InboundSignal[]>(INITIAL_INBOUND_SIGNALS);
   const [funnelStages, setFunnelStages] = useState<FunnelStage[]>(FUNNEL_STAGES_DATA);
   const [copilotQueue, setCopilotQueue] = useState<QueuedCopilotAction[]>(INITIAL_QUEUED_COPILOT);
@@ -66,17 +126,128 @@ export default function App() {
   const urgentCount = targets.filter((t) => t.status === 'pending').length;
   const unreadSignalsCount = signals.filter((s) => s.unread).length;
 
-  // Global ⌘K shortcut
+  // Handler: Unlock with password
+  const handleUnlockVault = async (password: string, rememberMe: boolean): Promise<boolean> => {
+    setIsVerifyingAuth(true);
+    setAuthError(null);
+    try {
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const sessionData: AuthSession = {
+          token: data.token,
+          authenticated: true,
+          expiresAt: rememberMe ? data.expiresAt : Date.now() + 2 * 60 * 60 * 1000,
+          rememberMe
+        };
+        if (rememberMe) {
+          localStorage.setItem('outreach_vault_session', JSON.stringify(sessionData));
+        } else {
+          sessionStorage.setItem('outreach_vault_session', JSON.stringify(sessionData));
+        }
+        setIsLocked(false);
+        setVaultMode('real');
+        localStorage.setItem('outreach_vault_mode', 'real');
+        return true;
+      } else {
+        setAuthError(data.error || 'Incorrect master password.');
+        return false;
+      }
+    } catch {
+      setAuthError('Connection error verifying password.');
+      return false;
+    } finally {
+      setIsVerifyingAuth(false);
+    }
+  };
+
+  // Handler: Enter demo presentation mode
+  const handleEnterDemoMode = () => {
+    setAuthError(null);
+    setVaultMode('demo');
+    localStorage.setItem('outreach_vault_mode', 'demo');
+    setIsLocked(false);
+  };
+
+  // Handler: Instant lock
+  const handleLockVault = useCallback(() => {
+    localStorage.removeItem('outreach_vault_session');
+    sessionStorage.removeItem('outreach_vault_session');
+    setIsLocked(true);
+  }, []);
+
+  // Handler: Toggle between Demo Mode and Real Vault
+  const handleToggleVaultMode = () => {
+    if (vaultMode === 'demo') {
+      const savedSession = localStorage.getItem('outreach_vault_session') || sessionStorage.getItem('outreach_vault_session');
+      let validSession = false;
+      if (savedSession) {
+        try {
+          const parsed = JSON.parse(savedSession);
+          if (parsed.authenticated && parsed.expiresAt > Date.now()) {
+            validSession = true;
+          }
+        } catch {}
+      }
+      if (validSession) {
+        setVaultMode('real');
+        localStorage.setItem('outreach_vault_mode', 'real');
+      } else {
+        setIsLocked(true);
+      }
+    } else {
+      setVaultMode('demo');
+      localStorage.setItem('outreach_vault_mode', 'demo');
+    }
+  };
+
+  const handleUpdateAutoLock = (minutes: number) => {
+    setAutoLockMinutes(minutes);
+    localStorage.setItem('outreach_autolock_min', String(minutes));
+  };
+
+  // Auto-lock inactivity timer
+  useEffect(() => {
+    if (isLocked || autoLockMinutes <= 0) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handleLockVault();
+      }, autoLockMinutes * 60 * 1000);
+    };
+
+    const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+    };
+  }, [isLocked, autoLockMinutes, handleLockVault]);
+
+  // Global shortcuts: ⌘K (Search) & ⌘L (Lock Vault)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
       }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'l' || e.key === 'L')) {
+        e.preventDefault();
+        handleLockVault();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [handleLockVault]);
 
   // Handler: Deploy single queued action
   const handleDeployQueuedAction = (action: QueuedCopilotAction) => {
@@ -188,6 +359,18 @@ export default function App() {
     setTargets((prev) => [newTarget, ...prev]);
   };
 
+  // If locked, render the high-security AuthLockScreen
+  if (isLocked) {
+    return (
+      <AuthLockScreen
+        onUnlock={handleUnlockVault}
+        onEnterDemoMode={handleEnterDemoMode}
+        isLoading={isVerifyingAuth}
+        errorMessage={authError}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0e131f] text-[#dde2f3] selection:bg-[#8083ff] selection:text-[#0d0096] flex flex-col antialiased">
       
@@ -202,6 +385,9 @@ export default function App() {
         aiEngine={aiEngine}
         onToggleAiEngine={() => setAiEngine((prev) => (prev === 'gemini' ? 'ollama' : 'gemini'))}
         unreadCount={unreadSignalsCount}
+        vaultMode={vaultMode}
+        onToggleVaultMode={handleToggleVaultMode}
+        onLock={handleLockVault}
       />
 
       {/* Main Content Area (padded for fixed header) */}
@@ -227,6 +413,8 @@ export default function App() {
                 urgentCount={urgentCount}
                 onBatchDispatch={handleTriggerBatchDispatch}
                 isDispatching={isBatchDispatching}
+                vaultMode={vaultMode}
+                onToggleVaultMode={handleToggleVaultMode}
               />
 
               {/* Section 1: KPI Telemetry Matrix (5 Cards) */}
@@ -379,6 +567,8 @@ export default function App() {
         onBatchDispatch={handleTriggerBatchDispatch}
         onToggleAi={() => setAiEngine((prev) => (prev === 'gemini' ? 'ollama' : 'gemini'))}
         onOpenGitHub={() => setIsGitHubModalOpen(true)}
+        onLockVault={handleLockVault}
+        onToggleVaultMode={handleToggleVaultMode}
       />
 
       <NotificationsDrawer
@@ -396,6 +586,11 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         aiEngine={aiEngine}
         onToggleAi={() => setAiEngine((prev) => (prev === 'gemini' ? 'ollama' : 'gemini'))}
+        vaultMode={vaultMode}
+        onToggleVaultMode={handleToggleVaultMode}
+        onLockVault={handleLockVault}
+        autoLockMinutes={autoLockMinutes}
+        onUpdateAutoLock={handleUpdateAutoLock}
       />
 
     </div>

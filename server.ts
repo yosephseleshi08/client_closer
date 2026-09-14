@@ -10,9 +10,70 @@ dotenv.config();
 
 const execAsync = promisify(exec);
 const app = express();
-const PORT = process.env.DEFAULT_APP_PORT ? 3000 : (process.env.PORT ? Number(process.env.PORT) : 3000);
+const PORT = 3000;
 
 app.use(express.json());
+
+// In-memory master password storage (overridable by ADMIN_PASSWORD env or in-app settings)
+let currentMasterPassword = process.env.ADMIN_PASSWORD || "closer2026";
+const validSessionTokens = new Set<string>();
+
+// Auth Endpoints for CRM Vault Protection
+app.get("/api/auth/status", (_req, res) => {
+  res.json({
+    isProtected: true,
+    isDefaultPassword: currentMasterPassword === "closer2026",
+    hasCustomEnvPassword: !!process.env.ADMIN_PASSWORD
+  });
+});
+
+app.post("/api/auth/verify", (req, res) => {
+  const { password } = req.body;
+  if (!password) {
+    return res.status(400).json({ success: false, error: "Password is required" });
+  }
+
+  if (password === currentMasterPassword) {
+    const token = `vault_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    validSessionTokens.add(token);
+    return res.json({
+      success: true,
+      token,
+      isDefaultPassword: currentMasterPassword === "closer2026",
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+  }
+
+  return res.status(401).json({
+    success: false,
+    error: "Invalid master password. Enter correct credentials to unlock private vault."
+  });
+});
+
+app.post("/api/auth/update-password", (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ success: false, error: "Both current and new password are required" });
+  }
+
+  if (currentPassword !== currentMasterPassword) {
+    return res.status(401).json({ success: false, error: "Current password does not match" });
+  }
+
+  if (newPassword.length < 4) {
+    return res.status(400).json({ success: false, error: "New password must be at least 4 characters long" });
+  }
+
+  currentMasterPassword = newPassword;
+  const newToken = `vault_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  validSessionTokens.add(newToken);
+
+  return res.json({
+    success: true,
+    message: "Master vault password updated successfully.",
+    token: newToken
+  });
+});
 
 // Lazy-initialized Gemini Client
 let geminiClient: GoogleGenAI | null = null;
